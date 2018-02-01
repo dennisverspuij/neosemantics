@@ -25,6 +25,7 @@ class DirectStatementLoader implements RDFHandler, Callable<Integer> {
     public static final Label RESOURCE = Label.label("Resource");
     private final boolean shortenUris;
     private final String langFilter;
+    private final boolean autoLangProperties;
     private int ingestedTriples = 0;
     private int triplesParsed = 0;
     private GraphDatabaseService graphdb;
@@ -46,7 +47,8 @@ class DirectStatementLoader implements RDFHandler, Callable<Integer> {
         nodeCache = CacheBuilder.newBuilder()
                 .maximumSize(nodeCacheSize)
                 .build();
-        langFilter = languageFilter;
+        autoLangProperties = (languageFilter != null && languageFilter.equals("@"));
+        langFilter = autoLangProperties ? null : languageFilter;
         log = l;
     }
 
@@ -150,8 +152,17 @@ class DirectStatementLoader implements RDFHandler, Callable<Integer> {
         if (object instanceof Literal) {
             final Object literalValue = getObjectValue((Literal) object);
             if (literalValue != null) {
-                setProp(subject.stringValue(), shorten(predicate), literalValue);
-                triplesParsed++;
+                String s = subject.stringValue();
+                String p = shorten(predicate);
+                if (literalValue instanceof String[]) {
+                  String [] x = (String[]) literalValue;
+                  setProp(s, p, x[0]);
+                  setProp(s, p + "@", x[1]);
+                  triplesParsed += 2;
+                } else {
+                  setProp(s, p, literalValue);
+                  triplesParsed++;
+                }
             }
         } else if (labellise && predicate.equals(RDF.TYPE) && !(object instanceof BNode)) {
             setLabel(subject.stringValue(),shorten((IRI)object));
@@ -214,8 +225,9 @@ class DirectStatementLoader implements RDFHandler, Callable<Integer> {
             // it's a string, and it can be tagged with language info.
             // if a language filter has been defined we apply it here
             final Optional<String> language = object.getLanguage();
-            if(langFilter == null || !language.isPresent() || (language.isPresent() && langFilter.equals(language.get()))){
-                return object.stringValue();
+            final boolean hasLanguage = language.isPresent();
+            if (langFilter == null || !hasLanguage || langFilter.equals(language.get())) {
+                return (autoLangProperties && hasLanguage) ? new String[] {object.stringValue(), language.get()} : object.stringValue();
             }
             return null; //string is filtered
         }

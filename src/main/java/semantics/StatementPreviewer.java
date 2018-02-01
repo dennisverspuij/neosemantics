@@ -19,6 +19,7 @@ class StatementPreviewer implements RDFHandler {
 
     private final boolean shortenUris;
     private final String langFilter;
+    private final boolean autoLangProperties;
     private GraphDatabaseService graphdb;
     private Map<String,Map<String,Object>> resourceProps = new HashMap<>();
     private Map<String,Set<String>> resourceLabels = new HashMap<>();
@@ -35,7 +36,8 @@ class StatementPreviewer implements RDFHandler {
         graphdb = db;
         shortenUris = shortenUrls;
         labellise =  typesToLabels;
-        langFilter = languageFilter;
+        autoLangProperties = (languageFilter != null && languageFilter.equals("@"));
+        langFilter = autoLangProperties ? null : languageFilter;
         vNodes = virtualNodes;
         vRels = virtualRels;
         log = l;
@@ -82,7 +84,16 @@ class StatementPreviewer implements RDFHandler {
         if (object instanceof Literal) {
             final Object literalStringValue = getObjectValue((Literal) object);
             if (literalStringValue != null) {
-                setProp(subject.stringValue().replace("'", "\'"), shorten(predicate), literalStringValue);
+                String s = subject.stringValue().replace("'", "\'");
+                String p = shorten(predicate);
+                if (literalStringValue instanceof String[]) {
+                  String [] x = (String[]) literalStringValue;
+                  setProp(s, p, x[0]);
+                  setProp(s, p + "@", x[1]);
+                } else {
+                  setProp(s, p, literalStringValue);
+                }
+
             }
         } else if (labellise && predicate.equals(RDF.TYPE) && !(object instanceof BNode)) {
             setLabel(subject.stringValue().replace("'", "\'"),shorten((IRI)object));
@@ -195,8 +206,9 @@ class StatementPreviewer implements RDFHandler {
             // it's a string, and it can be tagged with language info.
             // if a language filter has been defined we apply it here
             final Optional<String> language = object.getLanguage();
-            if(langFilter == null || !language.isPresent() || (language.isPresent() && langFilter.equals(language.get()))){
-                return object.stringValue();
+            final boolean hasLanguage = language.isPresent();
+            if (langFilter == null || !hasLanguage || langFilter.equals(language.get())){
+                return (autoLangProperties && hasLanguage) ? new String[] {object.stringValue(), language.get()} : object.stringValue();
             }
             return null; //string is filtered
         }
