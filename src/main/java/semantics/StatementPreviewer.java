@@ -9,8 +9,11 @@ import org.openrdf.rio.RDFHandler;
 import org.openrdf.rio.RDFHandlerException;
 import semantics.result.VirtualNode;
 import semantics.result.VirtualRelationship;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.codehaus.jackson.type.TypeReference;
 
 import java.util.*;
+import java.io.IOException;
 
 /**
  * Created by jbarrasa on 09/11/2016.
@@ -50,11 +53,22 @@ class StatementPreviewer implements RDFHandler {
 
     private void getExistingNamespaces() {
         Result nslist = graphdb.execute("MATCH (n:NamespacePrefixDefinition) \n" +
-                "UNWIND keys(n) AS namespace\n" +
-                "RETURN namespace, n[namespace] as prefix");
+                "WHERE EXISTS(n.uri)\n" +
+                "RETURN 'uri' as namespace, n.uri as prefix");
         while (nslist.hasNext()){
             Map<String, Object> ns = nslist.next();
-            namespaces.put((String)ns.get("namespace"),(String)ns.get("prefix"));
+            try {
+                Map<String,String> map = new ObjectMapper().readValue(
+                    (String)ns.get("prefix"), new TypeReference<Map<String,String>>() {}
+                );
+                for (Map.Entry<String,String> entry : map.entrySet())
+                {
+                  namespaces.put(entry.getKey(), entry.getValue());
+                }
+            } catch (IOException e) {
+                log.error("Error JSON parsing NamespacePrefixDefinition.uri: " + (String)ns.get("prefix"), e);
+                e.printStackTrace();
+            }
         }
     }
 

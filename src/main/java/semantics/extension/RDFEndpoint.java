@@ -1,6 +1,7 @@
 package semantics.extension;
 
 import org.codehaus.jackson.map.ObjectMapper;
+import org.codehaus.jackson.type.TypeReference;
 import org.neo4j.graphdb.*;
 import org.neo4j.logging.Log;
 import org.openrdf.model.IRI;
@@ -317,7 +318,18 @@ public class RDFEndpoint {
         Map<String, String> result = new HashMap<String, String>();
         while (nslist.hasNext()){
             Map<String, Object> ns = nslist.next();
-            result.put((String)ns.get("namespace"),(String)ns.get("prefix"));
+            try {
+                Map<String,String> map = new ObjectMapper().readValue(
+                    (String)ns.get("prefix"), new TypeReference<Map<String,String>>() {}
+                );
+                for (Map.Entry<String,String> entry : map.entrySet())
+                {
+                  result.put(entry.getKey(), entry.getValue());
+                }
+            } catch (IOException e) {
+                log.error("Error JSON parsing NamespacePrefixDefinition.uri: " + (String)ns.get("prefix"), e);
+                e.printStackTrace();
+            }
         }
         return result;
     }

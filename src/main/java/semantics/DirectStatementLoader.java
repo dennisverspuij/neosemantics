@@ -10,9 +10,12 @@ import org.openrdf.model.vocabulary.RDF;
 import org.openrdf.model.vocabulary.XMLSchema;
 import org.openrdf.rio.RDFHandler;
 import org.openrdf.rio.RDFHandlerException;
+import org.codehaus.jackson.map.ObjectMapper;
+import org.codehaus.jackson.type.TypeReference;
 
 import java.util.*;
 import java.util.concurrent.Callable;
+import java.io.IOException;
 
 import static semantics.RDFImport.PREFIX_SEPARATOR;
 
@@ -60,11 +63,22 @@ class DirectStatementLoader implements RDFHandler, Callable<Integer> {
 
     private void getExistingNamespaces() {
         Result nslist = graphdb.execute("MATCH (n:NamespacePrefixDefinition) \n" +
-                "UNWIND keys(n) AS namespace\n" +
-                "RETURN namespace, n[namespace] as prefix");
+                "WHERE EXISTS(n.uri)\n" +
+                "RETURN 'uri' as namespace, n.uri as prefix");
         while (nslist.hasNext()){
             Map<String, Object> ns = nslist.next();
-            namespaces.put((String)ns.get("namespace"),(String)ns.get("prefix"));
+            try {
+                Map<String,String> map = new ObjectMapper().readValue(
+                    (String)ns.get("prefix"), new TypeReference<Map<String,String>>() {}
+                );
+                for (Map.Entry<String,String> entry : map.entrySet())
+                {
+                  namespaces.put(entry.getKey(), entry.getValue());
+                }
+            } catch (IOException e) {
+                log.error("Error JSON parsing NamespacePrefixDefinition.uri: " + (String)ns.get("prefix"), e);
+                e.printStackTrace();
+            }
         }
     }
 
@@ -84,8 +98,15 @@ class DirectStatementLoader implements RDFHandler, Callable<Integer> {
     }
 
     private void addNamespaceNode() {
+        Map<String, String> map = new HashMap<>();
+        try {
+            map.put("uri", new ObjectMapper().writeValueAsString(namespaces));
+        } catch (IOException e) {
+            log.error("Failed creating or updating NamespacePrefixDefinition.uri", e);
+            e.printStackTrace();
+        }
         Map<String, Object> params = new HashMap<>();
-        params.put("props", namespaces);
+        params.put("props", map);
         graphdb.execute("MERGE (n:NamespacePrefixDefinition) SET n+={props}", params);
     }
 
